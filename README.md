@@ -1,11 +1,8 @@
-# support
+# Fork of Radius 2.0 to include macOS MDM profile generation
 
-The purpose of this support repo is to provide helpful scripts that complement various JumpCloud services including API examples.  
+The purpose of this fork is to develop a system for distributing user assigned Radius certs as macOS .mobileconfig files
+The goal is to use the MDM protocol to distribute per-user unsigned certs directly into the users keychain without requiring scripts,
+and embed the root cert in the system keychain leveraging the MDM trust chain, so the unsigned root cert is inherently trusted.
 
-* Feel free to submit PRs
-* Your API Key, keep it secret, keep it safe
-* Use example scripts at your own risk, this repo is maintained mainly by support staff and does not go through the normal Dev/QA process
-
-Some scripts use the deprecated (and out-of-date) JCAPI. In many cases, these scripts fail when running against multi-tenant user data.
-Since most (if not all) functionality is available elsewhere (e.g., in powershell scripts), these scripts will not be officially adjusted.
-
+Profiles can then be automatically associated to devices assigned to each user, removing the need for the user to manually approve the unsigned certificates,
+and webhook script retries will no longer be nessecary.
