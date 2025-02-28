@@ -1,3 +1,7 @@
+################################################################################
+#### MARK: Certificate Generation Configuration
+################################################################################
+
 # JUMPCLOUD USER GROUP ID
 $Global:JCR_USER_GROUP = 'your_radius_user_group'
 # USER CERT PASSWORD (this password is sent to the devices via JumpCloud Commands)
@@ -34,6 +38,17 @@ $Global:JCR_SUBJECT_HEADERS = [PSCustomObject]@{
 # EmailDN
 # UsernameCn (Default)
 $Global:JCR_CERT_TYPE = "UsernameCn"
+
+################################################################################
+#### MARK: macOS Configuration Profile Settings
+################################################################################
+
+# Set the Payload Scope, either "System" or "User"
+# Determines the deployment location of certs, except Root Certificates, which are always System
+$globalPayloadScope = "System"
+
+# JumpCloud Radius Certificate URL, leave as default unless the target cert has expired
+$JCRadiusCertURL = "https://jumpcloud-kb.s3.amazonaws.com/radius.jumpcloud.com-2024.crt"
 
 ################################################################################
 # Do not modify below
