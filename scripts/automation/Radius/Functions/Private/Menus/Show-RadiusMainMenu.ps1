@@ -43,6 +43,7 @@ function Show-RadiusMainMenu {
     # /==== ROOT CA ====
 
     # ==== GROUP/SSID/Global Variables  ====
+    Write-Host $(PadCenter -string "Organization: $($Global:JCR_ORGANIZATION)" -char " ") -ForegroundColor Green
     Write-Host $(PadCenter -string "Radius User Group: $($radiusUserGroup.Name)" -char " ") -ForegroundColor Green
     Write-Host $(PadCenter -string "Total Radius Users: $($radiusUserGroupMemberCount)" -char " ") -ForegroundColor Green
     Write-Host $(PadCenter -string "Radius SSID(s): $radiusSSID" -char " ") -ForegroundColor Green
@@ -52,11 +53,30 @@ function Show-RadiusMainMenu {
         Write-Host $(PadCenter -string "Last Updated User/System Data: $($Global:JCRConfig.globalVars.lastupdate.value)" -char " ") -ForegroundColor Green
     }
 
+    Write-Host $(PadCenter -string ' Certificate Management ' -char '-')
+    Write-Host " 1: Press '1' to Generate Root CA Certificate"
+    Write-Host " 2: Press '2' to Generate User Certificates
+    "
+
+    Write-Host $(PadCenter -string ' Profile Management ' -char '-')
+    Write-Host " 3: Press '3' to Generate macOS Profiles
+    "
+
+    Write-Host $(PadCenter -string ' Deployment ' -char '-')
+    Write-Host " 4: Press '4' to Deploy User Certificates as commands"
+    Write-Host " 5: Press '5' to Deploy macOS combined Certificate and Wi-Fi Profiles
+    "
+
+    Write-Host $(PadCenter -string ' Monitoring ' -char '-')
+    Write-Host " 6: Press '6' to Monitor macOS Profile Deployment"
+    Write-Host " 7: Press '7' to Monitor Command driven Certificate Deployment
+    "
+
+    Write-Host $(PadCenter -string ' Configuration ' -char '-')
+    Write-Host " 8: Press '8' to get/update global variables
+    "
+
     Write-Host $(PadCenter -string "-" -char '-')
-    Write-Host "1: Press '1' to generate/update your Root Certificate."
-    Write-Host "2: Press '2' to generate/update your User Certificate(s)."
-    Write-Host "3: Press '3' to distribute your User Certificate(s)."
-    Write-Host "4: Press '4' to monitor your User Certification Distribution."
-    Write-Host "4: Press '5' to update User/System Data."
-    Write-Host "Q: Press 'Q' to quit."
+    Write-Host " Q: Press 'Q' to quit
+    "
 }
