@@ -26,16 +26,17 @@ do {
         } '2' {
             Start-GenerateUserCerts
         } '3' {
-            Start-DeployUserCerts
+            Start-GeneratemacOSProfiles
         } '4' {
-            Start-MonitorCertDeployment
+            Start-DeployUserCerts
         } '5' {
-            Get-JCRGlobalVars -force
+            Start-DeployMacOSProfiles
+        } '6' {
+            Start-MonitormacOSProfileDeployment
+        } '7' {
+            Start-MonitorCommandDrivenCertDeployment
         } '8' {
-            Get-JCRGlobalVars -force -associateManually
-        } '9' {
-            $theUser = Read-Host "Enter the username of the user to manually update their association data"
-            Get-JCRGlobalVars -force -associationUsername $theUser
+            Get-JCRGlobalVars -force
         }
     }
     Pause
