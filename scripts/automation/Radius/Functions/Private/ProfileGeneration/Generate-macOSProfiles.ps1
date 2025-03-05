@@ -48,7 +48,6 @@ function Generate-macOSProfiles {
     }
     process {
         foreach ($user in $userObject) {
-        $user = $userObject[$i]
         Write-Host "[status] User: $($user.userName)"
         Write-Host "[status] systemAssociations: $($user.systemAssociations)"
 
@@ -70,65 +69,68 @@ function Generate-macOSProfiles {
 
         # Check if an existing mobileconfig file exists for the user
         $userProfilePath = "$JCScriptRoot/UserProfiles/$($user.username).mobileconfig"
-        if (-not $userObject[$i].macOSProfile) {
-            $userObject[$i] | Add-Member -MemberType NoteProperty -Name macOSProfile -Value @{ }
-            $userObject[$i] | Add-Member -MemberType NoteProperty -Name .macOSProfile.profilePayloadIdentifier -Value ""
-            $userObject[$i] | Add-Member -MemberType NoteProperty -Name .macOSProfile.profilePayloadUUID -Value ""
-            # Write the values to users.json for userObject[0]
-            $userObject[$i].macOSProfile.profilePayloadIdentifier = ""
-            $userObject[$i].macOSProfile.profilePayloadUUID = ""
+
+        # Check if the user json object has a macOSProfile object
+        if (-not $user.macOSProfile) {
+            Write-Host "[status] no matching macOSProfile object found for user $($user.userName), creating..."
+            # Create a macOSProfile object in the user object
+            $user | Add-Member -MemberType NoteProperty -Name macOSProfile -Value @{ }
+            $user | Add-Member -MemberType NoteProperty -Name .macOSProfile.profilePayloadIdentifier -Value ""
+            $user | Add-Member -MemberType NoteProperty -Name .macOSProfile.profilePayloadUUID -Value ""
+            $user.macOSProfile.profilePayloadIdentifier = ""
+            $user.macOSProfile.profilePayloadUUID = ""
         }
 
         # Generate new or parse existing profile payload keys and UUID values
         if (Test-Path -Path "$userProfilePath") {
             # !IMPORTANT! In order to update an existing profile, the payloadIdentifier and payloadUUID must be identical to the existing profile
-            if ($userObject[$i].macOSProfile -eq $null) {
+            if ($user.macOSProfile -eq $null) {
                 Write-Host "[status] no matching macOSProfile object found for user $($user.userName), creating..."
-                $userObject[$i] | Add-Member -MemberType NoteProperty -Name macOSProfile -Value @{ }
+                $user | Add-Member -MemberType NoteProperty -Name macOSProfile -Value @{ }
                 Write-Host "[status] Existing mobileconfig file found for user $($user.userName)"
-                if ($userObject[$i].macOSProfile.profilePayloadDisplayName -eq $null) {
+                if (-not $user.macOSProfile.profilePayloadDisplayName) {
                     Write-Host "[status] profilePayloadDisplayName not found, creating..."
                     $profilePayloadDisplayName = "$($user.userName) - $NETWORKSSID Radius WIFI"
                 } else {
-                    $profilePayloadDisplayName = $userObject[$i].macOSProfile.profilePayloadDisplayName
+                    $profilePayloadDisplayName = $user.macOSProfile.profilePayloadDisplayName
                 }
-                if ($userObject[$i].macOSProfile.profilePayloadIdentifier -eq $null) {
+                if ($user.macOSProfile.profilePayloadIdentifier -eq $null) {
                     Write-Host "[status] PayloadIdentifier not found, creating..."
                     $profilePayloadIdentifier = "com.$($JCR_SUBJECT_HEADERS.Organization).$([guid]::NewGuid().ToString())"
                 } else {
-                    $profilePayloadIdentifier = $userObject[$i].macOSProfile.profilePayloadIdentifier
+                    $profilePayloadIdentifier = $user.macOSProfile.profilePayloadIdentifier
                 }
-                if ($userObject[$i].macOSProfile.profilePayloadUUID -eq $null) {
+                if ($user.macOSProfile.profilePayloadUUID -eq $null) {
                     Write-Host "[status] PayloadUUID not found, creating..."
                     $profilePayloadUUID = "$([guid]::NewGuid().ToString())"
                 } else {
-                    $profilePayloadUUID = $userObject[$i].macOSProfile.profilePayloadUUID
+                    $profilePayloadUUID = $user.macOSProfile.profilePayloadUUID
                 }
-                if ($userObject[$i].macOSProfile.userCertPayloadUUID -eq $null) {
+                if ($user.macOSProfile.userCertPayloadUUID -eq $null) {
                     Write-Host "[status] userCertPayloadUUID not found, creating..."
                     $userCertPayloadUUID = "$([guid]::NewGuid().ToString())"
                 } else {
-                    $userCertPayloadUUID = $userObject[$i].macOSProfile.userCertPayloadUUID
+                    $userCertPayloadUUID = $user.macOSProfile.userCertPayloadUUID
                 }
-                if ($userObject[$i].macOSProfile.jcCertPayloadUUID -eq $null) {
+                if ($user.macOSProfile.jcCertPayloadUUID -eq $null) {
                     Write-Host "[status] jcCertPayloadUUID not found, creating..."
                     $jcCertPayloadUUID = "$([guid]::NewGuid().ToString())"
                 } else {
-                    $jcCertPayloadUUID = $userObject[$i].macOSProfile.jcCertPayloadUUID
+                    $jcCertPayloadUUID = $user.macOSProfile.jcCertPayloadUUID
                 }
-                if ($userObject[$i].macOSProfile.wifiPayloadUUID -eq $null) {
+                if ($user.macOSProfile.wifiPayloadUUID -eq $null) {
                     Write-Host "[status] wifiPayloadUUID not found, creating..."
                     $wifiPayloadUUID = "$([guid]::NewGuid().ToString())"
                 } else {
-                    $wifiPayloadUUID = $userObject[$i].macOSProfile.wifiPayloadUUID
+                    $wifiPayloadUUID = $user.macOSProfile.wifiPayloadUUID
                 }
             }
             # Write all values down to the users object in users.json
-            $userObject[$i].macOSProfile.profilePayloadIdentifier = $profilePayloadIdentifier
-            $userObject[$i].macOSProfile.profilePayloadUUID = $profilePayloadUUID
-            $userObject[$i].macOSProfile.userCertPayloadUUID = $userCertPayloadUUID
-            $userObject[$i].macOSProfile.jcCertPayloadUUID = $jcCertPayloadUUID
-            $userObject[$i].macOSProfile.wifiPayloadUUID = $wifiPayloadUUID
+            $user.macOSProfile.profilePayloadIdentifier = $profilePayloadIdentifier
+            $user.macOSProfile.profilePayloadUUID = $profilePayloadUUID
+            $user.macOSProfile.userCertPayloadUUID = $userCertPayloadUUID
+            $user.macOSProfile.jcCertPayloadUUID = $jcCertPayloadUUID
+            $user.macOSProfile.wifiPayloadUUID = $wifiPayloadUUID
             # Update the users.json file with the modified userObject
             $userObject | ConvertTo-Json | Set-Content -Path "$JCScriptRoot/users.json"
         } else {
