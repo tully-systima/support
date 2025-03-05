@@ -3,26 +3,35 @@ $JCScriptRoot = Split-Path -Parent $PSScriptRoot
 
 # Import the Config.ps1 file
 . "$JCScriptRoot/Config.ps1"
-Write-Host "[status] JCScriptRoot: `"$JCScriptRoot`""
-
-# Connect to the designated JumpCloud organization
-Connect-JCOnline -JumpCloudApiKey $JCAPIKEY -JumpCloudOrgId $JCORGID
 
 # Get user object from JCScriptRoot/users.json
 $userObject = Get-Content -Path "$JCScriptRoot/users.json" | ConvertFrom-Json
 
 # MARK: Set paths
-if (-Not (Test-Path -Path "$JCScriptRoot/JCRadiusCert/jc-radius-root-ca.crt")) {
+# JumpCloud Radius Root CA Certificate
+$jcCertPath = "$JCScriptRoot/JCRadiusCert/jc-radius-root-ca.crt"
+if (Test-Path -Path $jcCertPath) {
+        Write-Host "[status] JumpCloud Radius Root CA Certificate confirmed" -ForegroundColor Green
+} else {
     if (-Not (Test-Path -Path "$JCScriptRoot/JCRadiusCert/")) {
-        Write-Host "[status] Creating JCRadiusCert directory..."
+        Write-Host "[status] JumpCloud Radius Root CA Certificate not found" -ForegroundColor Red
+        Write-Host "Creating JCRadiusCert directory..." -ForegroundColor Yellow
         New-Item -Path "$JCScriptRoot/JCRadiusCert" -ItemType Directory
     }
-    Write-Host "[status] Downloading JumpCloud Radius Root CA Certificate..."
-    $jcRadiusRootCA = Invoke-WebRequest -Uri "$JCRadiusCertURL" -OutFile "$JCScriptRoot/JCRadiusCert/jc-radius-root-ca.crt"
-} else {
-    Write-Host "[status] JumpCloud Radius Root CA Certificate confirmed"
+    Write-Host "[status] Downloading JumpCloud Radius Root CA Certificate..." -ForegroundColor Yellow
+    if ($JCRadiusCertURL -eq $null) {
+        Write-Host "No JCRadiusCertURL found in Config.ps1. Please set the JCRadiusCertURL variable." -ForegroundColor Red
+        return 1
+    }
+    $jcRadiusRootCA = Invoke-WebRequest -Uri "$JCRadiusCertURL" -OutFile $jcCertPath
+    # Check if the download was successful
+    if ($jcRadiusRootCA.StatusCode -eq 200) {
+        Write-Host "[status] JumpCloud Radius Root CA Certificate downloaded successfully" -ForegroundColor Green
+    } else {
+        Write-Host "[status] JumpCloud Radius Root CA Certificate download failed" -ForegroundColor Red
+        return 1
+    }
 }
-$jcCertPath = "$JCScriptRoot/JCRadiusCert/jc-radius-root-ca.crt"
 
 # Set userCertType based on CertType
 if ($CertType -eq "UsernameCN") {
@@ -32,8 +41,8 @@ if ($CertType -eq "UsernameCN") {
 }
 
 # MARK: Loop through the users json array
-for ($i=0; $i -lt $userObject.Count; $i++) {
-    $user = $userObject[$i]
+
+foreach ($user in $userObject) {
     Write-Host "[status] User: $($user.userName)"
     Write-Host "[status] systemAssociations: $($user.systemAssociations)"
 
@@ -55,81 +64,196 @@ for ($i=0; $i -lt $userObject.Count; $i++) {
 
     # Check if an existing mobileconfig file exists for the user
     $userProfilePath = "$JCScriptRoot/UserProfiles/$($user.username).mobileconfig"
-    if (-not $userObject[$i].macOSProfile) {
-        $userObject[$i] | Add-Member -MemberType NoteProperty -Name macOSProfile -Value @{ }
-        $userObject[$i] | Add-Member -MemberType NoteProperty -Name .macOSProfile.profilePayloadIdentifier -Value ""
-        $userObject[$i] | Add-Member -MemberType NoteProperty -Name .macOSProfile.profilePayloadUUID -Value ""
-        # Write the values to users.json for userObject[0]
-        $userObject[$i].macOSProfile.profilePayloadIdentifier = ""
-        $userObject[$i].macOSProfile.profilePayloadUUID = ""
+
+    # MARK: Identifiers and UUIDs
+    # !IMPORTANT! In order to seamlessly update an existing macOS profile, the payloadIdentifier and payloadUUID must be identical to the existing profile.
+    if (-not ($user.macOSProfile)) {
+        Write-Host "[status] no matching macOSProfile object found for user $($user.userName), creating..." -ForegroundColor Yellow
+        $user | Add-Member -MemberType NoteProperty -Name macOSProfile -Value @{ }
     }
 
-    # Generate new or parse existing profile payload keys and UUID values
-    if (Test-Path -Path "$userProfilePath") {
-        # !IMPORTANT! In order to update an existing profile, the payloadIdentifier and payloadUUID must be identical to the existing profile
-        if ($userObject[$i].macOSProfile -eq $null) {
-            Write-Host "[status] no matching macOSProfile object found for user $($user.userName), creating..."
-            $userObject[$i] | Add-Member -MemberType NoteProperty -Name macOSProfile -Value @{ }
-            Write-Host "[status] Existing mobileconfig file found for user $($user.userName)"
-            if ($userObject[$i].macOSProfile.profilePayloadDisplayName -eq $null) {
-                Write-Host "[status] profilePayloadDisplayName not found, creating..."
-                $profilePayloadDisplayName = "$($user.userName) - $NETWORKSSID Radius WIFI"
-            } else {
-                $profilePayloadDisplayName = $userObject[$i].macOSProfile.profilePayloadDisplayName
-            }
-            if ($userObject[$i].macOSProfile.profilePayloadIdentifier -eq $null) {
-                Write-Host "[status] PayloadIdentifier not found, creating..."
-                $profilePayloadIdentifier = "com.$($JCR_SUBJECT_HEADERS.Organization).$([guid]::NewGuid().ToString())"
-            } else {
-                $profilePayloadIdentifier = $userObject[$i].macOSProfile.profilePayloadIdentifier
-            }
-            if ($userObject[$i].macOSProfile.profilePayloadUUID -eq $null) {
-                Write-Host "[status] PayloadUUID not found, creating..."
-                $profilePayloadUUID = "$([guid]::NewGuid().ToString())"
-            } else {
-                $profilePayloadUUID = $userObject[$i].macOSProfile.profilePayloadUUID
-            }
-            if ($userObject[$i].macOSProfile.userCertPayloadUUID -eq $null) {
-                Write-Host "[status] userCertPayloadUUID not found, creating..."
-                $userCertPayloadUUID = "$([guid]::NewGuid().ToString())"
-            } else {
-                $userCertPayloadUUID = $userObject[$i].macOSProfile.userCertPayloadUUID
-            }
-            if ($userObject[$i].macOSProfile.jcCertPayloadUUID -eq $null) {
-                Write-Host "[status] jcCertPayloadUUID not found, creating..."
-                $jcCertPayloadUUID = "$([guid]::NewGuid().ToString())"
-            } else {
-                $jcCertPayloadUUID = $userObject[$i].macOSProfile.jcCertPayloadUUID
-            }
-            if ($userObject[$i].macOSProfile.wifiPayloadUUID -eq $null) {
-                Write-Host "[status] wifiPayloadUUID not found, creating..."
-                $wifiPayloadUUID = "$([guid]::NewGuid().ToString())"
-            } else {
-                $wifiPayloadUUID = $userObject[$i].macOSProfile.wifiPayloadUUID
-            }
-        }
-        # Write all values down to the users object in users.json
-        $userObject[$i].macOSProfile.profilePayloadIdentifier = $profilePayloadIdentifier
-        $userObject[$i].macOSProfile.profilePayloadUUID = $profilePayloadUUID
-        $userObject[$i].macOSProfile.userCertPayloadUUID = $userCertPayloadUUID
-        $userObject[$i].macOSProfile.jcCertPayloadUUID = $jcCertPayloadUUID
-        $userObject[$i].macOSProfile.wifiPayloadUUID = $wifiPayloadUUID
-        # Update the users.json file with the modified userObject
-        $userObject | ConvertTo-Json | Set-Content -Path "$JCScriptRoot/users.json"
+    # MARK: JumpCloud Policy ID
+    if ($user.macOSProfile.JCPolicyID) {
+        Write-Host "[status] JCPolicyID found" -ForegroundColor Green
     } else {
-        # If not, create and store new PayloadIdentifier and PayloadUUID
-        Write-Host "[status] No existing mobileconfig file found for user $($user.userName), creating new..."
-        $profilePayloadIdentifier = "com.$($JCR_SUBJECT_HEADERS.Organization).$([guid]::NewGuid().ToString())"
-        $profilePayloadUUID = "$([guid]::NewGuid().ToString())"
-        $userCertPayloadUUID = "$([guid]::NewGuid().ToString())"
-        $jcCertPayloadUUID = "$([guid]::NewGuid().ToString())"
-        $wifiPayloadUUID = "$([guid]::NewGuid().ToString())"
+        Write-Host "[status] JCPolicyID not found" -ForegroundColor Yellow
     }
 
-    Write-Host "[status] profilePayloadIdentifier: `"$profilePayloadIdentifier`""
-    Write-Host "[status] profilePayloadUUID: `"$profilePayloadUUID`""
+    # MARK: Profile Display Name
+    if ($user.macOSProfile.profilePayloadDisplayName) {
+        Write-Host "[status] profilePayloadDisplayName found" -ForegroundColor Green
+        $profilePayloadDisplayName = $user.macOSProfile.profilePayloadDisplayName
+    } else {
+        if (Test-Path -Path $userProfilePath) {
+            # Check the existing mobileconfig profile for the value of <key>PayloadDisplayName</key>
+            $profilePayloadDisplayName = (Get-Content -Path $userProfilePath | Select-String -Pattern "<key>PayloadDisplayName</key>" -Context 0,1).Context.PostContext
+            $profilePayloadDisplayName = $profilePayloadDisplayName -replace "<string>|</string>|^\s+|\s+$"
+            # Check if the value was found
+            if ($profilePayloadDisplayName) {
+                Write-Host "[status] profilePayloadDisplayName found in existing mobileconfig file" -ForegroundColor Green
+                return
+            } else {
+                Write-Host "[status] profilePayloadDisplayName not found, creating..." -ForegroundColor Blue
+                $profilePayloadDisplayName = "$($user.userName) - $NETWORKSSID Radius WIFI"
+                $user.macOSProfile | Add-Member -MemberType NoteProperty -Name profilePayloadDisplayName -Value "$($profilePayloadDisplayName)"
+                return
+            }
+        } else {
+            Write-Host "[status] Creating profilePayloadDisplayName" -ForegroundColor Blue
+            $profilePayloadDisplayName = "$($user.userName) - $NETWORKSSID Radius WIFI"
+            $user.macOSProfile | Add-Member -MemberType NoteProperty -Name profilePayloadDisplayName -Value "$($profilePayloadDisplayName)"
+        }
+    }
+    # Update $user object
+    $user.macOSProfile.profilePayloadDisplayName = "$($profilePayloadDisplayName)"
 
-    if (-Not (Test-Path -Path "$JCScriptRoot/UserProfiles/")) {
+    # MARK: Profile Identifier
+    if ($user.macOSProfile.profilePayloadIdentifier) {
+        Write-Host "[status] profilePayloadIdentifier found" -ForegroundColor Green
+        $profilePayloadIdentifier = $user.macOSProfile.profilePayloadIdentifier
+    } else {
+        if (Test-Path -Path $userProfilePath) {
+            # Check the existing .mobileconfig profile for the value of <key>PayloadIdentifier</key>
+            $profilePayloadIdentifier = (Get-Content -Path $userProfilePath | Select-String -Pattern "<key>PayloadIdentifier</key>" -Context 0,1).Context.PostContext
+            $profilePayloadIdentifier = $profilePayloadIdentifier -replace "<string>|</string>|^\s+|\s+$"
+            # Check if the value was found
+            if ($profilePayloadIdentifier) {
+                Write-Host "[status] profilePayloadIdentifier found in existing mobileconfig file" -ForegroundColor Green
+                return
+            } else {
+                Write-Host "[status] profilePayloadIdentifier not found, creating..." -ForegroundColor Blue
+                $profilePayloadIdentifier = "com.jumpcloud.$($user.userName).radius-wifi"
+                $user.macOSProfile | Add-Member -MemberType NoteProperty -Name profilePayloadIdentifier -Value "$($profilePayloadIdentifier)"
+                return
+            }
+        } else {
+            Write-Host "[status] Creating profilePayloadIdentifier" -ForegroundColor Blue
+            $profilePayloadIdentifier = "com.jumpcloud.$($user.userName).radius-wifi"
+            $user.macOSProfile | Add-Member -MemberType NoteProperty -Name profilePayloadIdentifier -Value "$($profilePayloadIdentifier)"
+        }
+    }
+    # Update $user object
+    $user.macOSProfile.profilePayloadIdentifier = "$($profilePayloadIdentifier)"
+
+    # MARK: Profile UUID
+    if ($user.macOSProfile.profilePayloadUUID) {
+        Write-Host "[status] profilePayloadUUID found" -ForegroundColor Green
+        $profilePayloadUUID = $user.macOSProfile.profilePayloadUUID
+    } else {
+        if (Test-Path -Path $userProfilePath) {
+            # Check the existing .mobileconfig profile for the value of <key>PayloadUUID</key>
+            $profilePayloadUUID = (Get-Content -Path $userProfilePath | Select-String -Pattern "<key>PayloadUUID</key>" -Context 0,1).Context.PostContext
+            $profilePayloadUUID = $profilePayloadUUID -replace "<string>|</string>|^\s+|\s+$"
+            # Check if the value was found
+            if ($profilePayloadUUID) {
+                Write-Host "[status] profilePayloadUUID found in existing mobileconfig file" -ForegroundColor Green
+                return
+            } else {
+                Write-Host "[status] profilePayloadUUID not found, creating..." -ForegroundColor Yellow
+                $profilePayloadUUID = "$([guid]::NewGuid().ToString())"
+                $user.macOSProfile | Add-Member -MemberType NoteProperty -Name profilePayloadUUID -Value "$($profilePayloadUUID)"
+                return
+            }
+        } else {
+            Write-Host "[status] Creating profilePayloadUUID" -ForegroundColor Blue
+            $profilePayloadUUID = "$([guid]::NewGuid().ToString())"
+            $user.macOSProfile | Add-Member -MemberType NoteProperty -Name profilePayloadUUID -Value "$($profilePayloadUUID)"
+        }
+    }
+    # Update $user object
+    $user.macOSProfile.profilePayloadUUID = "$($profilePayloadUUID)"
+
+    # MARK: Other UUIDs
+    if ($user.macOSProfile.userCertPayloadUUID) {
+        Write-Host "[status] userCertPayloadUUID found" -ForegroundColor Green
+        $userCertPayloadUUID = $user.macOSProfile.userCertPayloadUUID
+    } else {
+        if (Test-Path -Path $userProfilePath) {
+            # Check the existing .mobileconfig profile for the value of <key>PayloadUUID</key>
+            $userCertPayloadUUID = (Get-Content -Path $userProfilePath | Select-String -Pattern "<key>PayloadUUID</key>" -Context 0,1).Context.PostContext
+            $userCertPayloadUUID = $userCertPayloadUUID -replace "<string>|</string>|^\s+|\s+$"
+            # Check if the value was found
+            if ($userCertPayloadUUID) {
+                Write-Host "[status] userCertPayloadUUID found in existing mobileconfig file" -ForegroundColor Green
+                return
+            } else {
+                Write-Host "[status] userCertPayloadUUID not found, creating..." -ForegroundColor Yellow
+                $userCertPayloadUUID = "$([guid]::NewGuid().ToString())"
+                $user.macOSProfile | Add-Member -MemberType NoteProperty -Name userCertPayloadUUID -Value "$($userCertPayloadUUID)"
+                return
+            }
+        } else {
+            Write-Host "[status] Creating userCertPayloadUUID" -ForegroundColor Blue
+            $userCertPayloadUUID = "$([guid]::NewGuid().ToString())"
+            $user.macOSProfile | Add-Member -MemberType NoteProperty -Name userCertPayloadUUID -Value "$($userCertPayloadUUID)"
+        }
+    }
+    # Update $user object
+    $user.macOSProfile.userCertPayloadUUID = "$($userCertPayloadUUID)"
+
+    if ($user.macOSProfile.jcCertPayloadUUID) {
+        Write-Host "[status] jcCertPayloadUUID found" -ForegroundColor Green
+        $jcCertPayloadUUID = $user.macOSProfile.jcCertPayloadUUID
+    } else {
+        if (Test-Path -Path $userProfilePath) {
+            # Check the existing .mobileconfig profile for the value of <key>PayloadUUID</key>
+            $jcCertPayloadUUID = (Get-Content -Path $userProfilePath | Select-String -Pattern "<key>PayloadUUID</key>" -Context 0,1).Context.PostContext
+            $jcCertPayloadUUID = $jcCertPayloadUUID -replace "<string>|</string>|^\s+|\s+$"
+            # Check if the value was found
+            if ($jcCertPayloadUUID) {
+                Write-Host "[status] jcCertPayloadUUID found in existing mobileconfig file" -ForegroundColor Green
+                return
+            } else {
+                Write-Host "[status] jcCertPayloadUUID not found, creating..." -ForegroundColor Yellow
+                $jcCertPayloadUUID = "$([guid]::NewGuid().ToString())"
+                $user.macOSProfile | Add-Member -MemberType NoteProperty -Name jcCertPayloadUUID -Value "$($jcCertPayloadUUID)"
+                return
+            }
+        } else {
+            Write-Host "[status] Creating jcCertPayloadUUID" -ForegroundColor Blue
+            $jcCertPayloadUUID = "$([guid]::NewGuid().ToString())"
+            $user.macOSProfile | Add-Member -MemberType NoteProperty -Name jcCertPayloadUUID -Value "$($jcCertPayloadUUID)"
+        }
+    }
+    # Update $user object
+    $user.macOSProfile.jcCertPayloadUUID = "$($jcCertPayloadUUID)"
+
+    if ($user.macOSProfile.wifiPayloadUUID) {
+        Write-Host "[status] wifiPayloadUUID found" -ForegroundColor Green
+        $wifiPayloadUUID = $user.macOSProfile.wifiPayloadUUID
+    } else {
+        if (Test-Path -Path $userProfilePath) {
+            # Check the existing .mobileconfig profile for the value of <key>PayloadUUID</key>
+            $wifiPayloadUUID = (Get-Content -Path $userProfilePath | Select-String -Pattern "<key>PayloadUUID</key>" -Context 0,1).Context.PostContext
+            $wifiPayloadUUID = $wifiPayloadUUID -replace "<string>|</string>|^\s+|\s+$"
+            # Check if the value was found
+            if ($wifiPayloadUUID) {
+                Write-Host "[status] wifiPayloadUUID found in existing mobileconfig file" -ForegroundColor Green
+                return
+            } else {
+                Write-Host "[status] wifiPayloadUUID not found, creating..." -ForegroundColor Yellow
+                $wifiPayloadUUID = "$([guid]::NewGuid().ToString())"
+                $user.macOSProfile | Add-Member -MemberType NoteProperty -Name wifiPayloadUUID -Value "$($wifiPayloadUUID)"
+                return
+            }
+        } else {
+            Write-Host "[status] Creating wifiPayloadUUID" -ForegroundColor Blue
+            $wifiPayloadUUID = "$([guid]::NewGuid().ToString())"
+            $user.macOSProfile | Add-Member -MemberType NoteProperty -Name wifiPayloadUUID -Value "$($wifiPayloadUUID)"
+        }
+    }
+    # Update $user object
+    $user.macOSProfile.wifiPayloadUUID = "$($wifiPayloadUUID)"
+
+    Write-Host "[status] Profile identifiers and UUIDs:" -ForegroundColor Blue
+    Write-Host " - profilePayloadDisplayName:  `"$profilePayloadDisplayName`"" -ForegroundColor Blue
+    Write-Host " - profilePayloadIdentifier:   `"$profilePayloadIdentifier`"" -ForegroundColor Blue
+    Write-Host " - profilePayloadUUID:         `"$profilePayloadUUID`"" -ForegroundColor Blue
+    Write-Host " - userCertPayloadUUID:        `"$userCertPayloadUUID`"" -ForegroundColor Blue
+    Write-Host " - jcCertPayloadUUID:          `"$jcCertPayloadUUID`"" -ForegroundColor Blue
+    Write-Host " - wifiPayloadUUID:            `"$wifiPayloadUUID`"" -ForegroundColor Blue
+
+    if (-not (Test-Path -Path "$JCScriptRoot/UserProfiles/")) {
         Write-Host "[status] Creating UserProfiles directory..."
         New-Item -Path "$JCScriptRoot/UserProfiles" -ItemType Directory
     }
@@ -272,5 +396,15 @@ $rootCertPayload
     # Write the mobileconfig content to the user profile path
     Write-Host "[status] Writing mobileconfig content to file: `"$userProfilePath`""
     Set-Content -Path $userProfilePath -Value $mobileconfigContent
-    Write-Host "[status] Mobileconfig file created for user $($user.userName)"
+    Write-Host "[status] Mobileconfig file created for user $($user.userName)" -ForegroundColor Green
+
+    # Write all values down to the users object in users.json
+    $user.macOSProfile.profilePayloadDisplayName = $profilePayloadDisplayName
+    $user.macOSProfile.profilePayloadIdentifier = $profilePayloadIdentifier
+    $user.macOSProfile.profilePayloadUUID = $profilePayloadUUID
+    $user.macOSProfile.userCertPayloadUUID = $userCertPayloadUUID
+    $user.macOSProfile.jcCertPayloadUUID = $jcCertPayloadUUID
+
+    # Update the users.json file with the modified userObject
+    $userObject | ConvertTo-Json | Set-Content -Path "$JCScriptRoot/users.json"
 }
