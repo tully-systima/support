@@ -51,9 +51,6 @@ function Generate-macOSProfiles {
         Write-Host "[status] User: $($user.userName)"
         Write-Host "[status] systemAssociations: $($user.systemAssociations)"
 
-        # Payload Display Name (also used for the JumpCloud policy name)
-        $profilePayloadDisplayName = "$($user.userName) - $NETWORKSSID Radius WIFI"
-
         # Check if a certificate has been generated for the user
         $userCertFiles = Get-ChildItem -Path "$JCScriptRoot/UserCerts" -Filter "$($user.userName)*"
         $userCertPath = ($userCertFiles | Where-Object { $_.Name -match "pfx" }).FullName
