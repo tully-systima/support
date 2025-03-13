@@ -84,7 +84,7 @@ The function relies on several other functions:
 - `Generate-macOSProfiles`: Creates the actual profile files
 - `Get-UserJsonData`: Retrieves user information
 - `Test-UserFromHash`: Validates usernames
-- `Show-macOSProfileMenu`: Displays the interactive menu
+- `Show-GeneratemacOSProfilesMenu`: Displays the interactive menu
 - `Show-RadiusProgress`: Displays progress during operations
 
 ## Note

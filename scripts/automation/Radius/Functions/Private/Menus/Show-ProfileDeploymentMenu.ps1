@@ -1,4 +1,4 @@
-function Show-ProfileDeploymentMenu {
+function Show-macOSProfileDeploymentMenu {
     $title = ' JumpCloud macOS Profile Deployment '
     Clear-Host
     Write-Host $(PadCenter -string $Title -char '=')

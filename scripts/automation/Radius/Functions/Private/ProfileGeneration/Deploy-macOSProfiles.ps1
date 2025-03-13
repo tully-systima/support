@@ -8,7 +8,11 @@ function Deploy-macOSProfiles {
         # prompt assicate profiles to devices
         [Parameter(HelpMessage = 'When specified, the user will be prompted to associate policies to devices after they have been generated')]
         [switch]
-        $prompt
+        $prompt,
+        # Associate profiles to devices
+        [Parameter(HelpMessage = 'When specified, profiles will be automatically associated to devices')]
+        [switch]
+        $associateProfiles
     )
 
     begin {
@@ -19,6 +23,8 @@ function Deploy-macOSProfiles {
 
         $status_profileGenerated = $false
         $result_profileDeployed = $false
+        $deploySuccess = @()
+        $deployErrors = @()
 
         switch ($prompt) {
             $true {
@@ -37,75 +43,84 @@ function Deploy-macOSProfiles {
 
     process {
         foreach ($user in $userObject) {
-            $userProfilePath = "$JCScriptRoot/UserProfiles/$($user.username).mobileconfig"
-            if (-Not (Test-Path -Path "$userProfilePath")) {
-                Write-Host "No mobileconfig files found for user $($user.userName). Please generate profiles first." -ForegroundColor Red
-                return 1
-            }
-
-            # Get stored profile identifiers
-            $profilePayloadIdentifier = $user.macOSProfile.profilePayloadIdentifier
-            $profilePayloadUUID = $user.macOSProfile.profilePayloadUUID
-
             Write-Host "[status] User: $($user.userName)"
-            Write-Host "[status] systemAssociations: $($user.systemAssociations)"
 
-            # Get the JumpCloud PolicyID for this user:
-            $userPolicyID = $user.macOSProfile.JCPolicyID
+            $userProfilePath = "$JCScriptRoot/UserProfiles/$($user.username).mobileconfig"
+            $userPolicyName = $user.macOSProfile.profilePayloadDisplayName
 
-            # Encode the .mobileconfig file as a base64 string
-            $profileBase64 = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($userProfilePath))
-
-            # Check if an existing JumpCloud policy exists for the user
-            $existingPolicy = Get-JCPolicy -ID $userPolicyID
-            if ($existingPolicy) {
-                Write-Host "[status] Existing policy found, updating: $($existingPolicy.id)"
-                $policyCommand = Set-JCPolicy -profileID $policy.id -Values "$profileBase64" -Notes "Profile updated on $(Get-Date)"
+            if (-Not (Test-Path -Path "$userProfilePath")) {
+                Write-Host "[status] No mobileconfig files found for user $($user.userName). Please generate profiles first." -ForegroundColor Red
             } else {
-                Write-Host "[status] No existing policy found"
-                $policyCommand = New-JCPolicy -TemplateID "darwin_MDM_Custom_Configuration_Profile" -name $profileName -Values "$profileBase64" -Notes "Profile updated on $(Get-Date)"
-            }
+                Write-Host "[status] Mobileconfig file found for user $($user.userName), proceeding with deployment..." -ForegroundColor Green
 
-            # Write the mobileconfig content to the user profile path
-            Write-Host "[status] Writing mobileconfig content to file: `"$userProfilePath`""
-            Set-Content -Path $userProfilePath -Value $mobileconfigContent
-            Write-Host "[status] Mobileconfig file created for user $($user.userName)"
+                # Check for existing JumpCloud macOS Radius Wifi Policies user:
+                Write-Host "[status] Getting JumpCloud PolicyID for user $($user.userName)"
+                $userPolicyID = $user.macOSProfile.JCPolicyID
+                if ($userPolicyID) {
+                    Write-Host "[status] JumpCloud PolicyID found for user $($user.userName): $userPolicyID"
+                    $existingPolicy = Get-JCPolicy -ID $userPolicyID
+                } else {
+                    Write-Host "[status] No JumpCloud PolicyID found in users.json for user $($user.userName), checking JumpCloud for matching policy name..."
+                    $existingPolicy = Get-JCPolicy -Name $userPolicyName
+                }
+
+                # Check if an existing JumpCloud policy exists for the user
+                if ($existingPolicy) {
+                    Write-Host "[status] Existing policy found, updating: $($existingPolicy)"
+                    try {
+                        Set-JCPolicy -profileID $existingPolicy.id -payload "$($userProfilePath)" -Notes "Profile updated on $(Get-Date)" | Out-Null
+                        Write-Host "[success] Successfully updated policy for user $($user.userName)" -ForegroundColor Green
+                        $deploySuccess += $user.userName
+                    } catch {
+                        Write-Host "[error] Failed to update policy for user $($user.userName): $($_.Exception.Message)" -ForegroundColor Red
+                        $deployErrors += $user.userName
+                    }
+                } else {
+                    Write-Host "[status] No existing policy found, creating new policy..."
+                    try {
+                        $userPolicyID = (New-JCPolicy -TemplateName "darwin_MDM_Custom_Configuration_Profile" -name $userPolicyName -payload "$($userProfilePath)" -Notes "Profile updated on $(Get-Date)").id
+                        Write-Host "[success] Successfully created policy for user $($user.userName)" -ForegroundColor Green
+                        $deploySuccess += $user.userName
+
+                        # Get the updated policy ID
+                        $existingPolicy = Get-JCPolicy -ID $userPolicyID
+                        Write-Host "[status] JumpCloud PolicyID for user $($user.userName): $userPolicyID"
+                    } catch {
+                        Write-Host "[error] Failed to create policy for user $($user.userName): $($_.Exception.Message)" -ForegroundColor Red
+                        $deployErrors += $user.userName
+                    }
+                }
+            }
         }
     }
 
     end {
-        return $deploySuccess
+        Write-Host "[summary] Successfully deployed profiles for users: $($deploySuccess -join ', ')" -ForegroundColor Green
+        if ($deployErrors.Count -gt 0) {
+            Write-Host "[summary] Failed to deploy profiles for users: $($deployErrors -join ', ')" -ForegroundColor Red
+        }
+        return @{
+            Success = $deploySuccess
+            Errors = $deployErrors
+        }
     }
 }
 
-function Deploy-ProfileToUser {
+function Associate-ProfileToSystems {
     param (
-        [string]$username,
-        [string]$profilePath,
-        [array]$systems
+        [Parameter(HelpMessage = 'An individual or array of user objects from users.json', Mandatory)]
+        [System.Object[]]
+        $userObject,
+        [Parameter(HelpMessage = 'An individual or array of system objects from systems.json', Mandatory)]
+        [System.Object[]]
+        $systemObject
     )
     try {
-        # Read profile content
-        $profileContent = [System.IO.File]::ReadAllBytes($profilePath)
-        $encodedProfile = [Convert]::ToBase64String($profileContent)
-
-        # Check for existing assigned policy
-        $profileName = "$($user.username) - $($NETWORKSSID) Radius WIFI"
-        $policy = Get-JCPolicy -Name $profileName
-
-        if ($policy) {
-            # If the policy exists, update existing policy
-            $policyCommand = Set-JCPolicy -profileID $policy.id -Values "$profileBase64" -Notes "Profile updated on $(Get-Date)"
-        } else {
-            # Create new profile
-            $policyCommand = New-JCPolicy -TemplateID "darwin_MDM_Custom_Configuration_Profile" -name $profileName -Values "$profileBase64" -Notes "Profile updated on $(Get-Date)"
+        foreach ($user in $userObject) {
+            Write-Host "[status] User: $($user.userName)" -ForegroundColor Blue
+            Write-Host "[status] systemAssociations: $($user.systemAssociations)" -ForegroundColor Blue
+            foreach ($system in $user.systemAssociations) {
+            }
         }
-        # Apply profile to systems
-        foreach ($system in $systems) {
-            $policyCommand
-            Write-Host "Deployed profile for $username to system $($system.hostname)" -ForegroundColor Green
-        }
-    } catch {
-        Write-Error "Error deploying profile to systems: $($_.Exception.Message)"
     }
 }

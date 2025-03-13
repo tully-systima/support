@@ -13,7 +13,7 @@ Function Start-MonitormacOSProfileDeployment {
 
     # Show user selection
     do {
-        Show-ProfileDeploymentMenu
+        Show-macOSProfileDeploymentMenu
         $option = Read-Host "Please make a selection"
         switch ($option) {
             '1' {
